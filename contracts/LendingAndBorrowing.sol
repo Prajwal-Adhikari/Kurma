@@ -15,7 +15,9 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 contract LendingAndBorrowing {
     //Events
 
-    event Deposit(address sender, address token, uint256 amount);
+    event Deposit(address sender, address token, uint256 amount);   //event for deposit
+
+    event Withdraw(address receiver, address token, uint256 amount); //event for withdraw
 
     //mapping to track token deposited
     mapping(address => mapping(address => uint256)) public deposits;
@@ -49,4 +51,8 @@ contract LendingAndBorrowing {
 
         emit Deposit(msg.sender, token, amount);    //5
     }
+
+
+    //withdraw
+
 }
