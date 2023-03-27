@@ -19,6 +19,6 @@ contract Lending is Ownable, ReentrancyGuard{
 
     //I will implement stable rate for calculation of interest for this project
 
-    
+
 
 }
