@@ -17,8 +17,23 @@ contract Lending is Ownable, ReentrancyGuard{
     mapping(address => address) public tokenToPriceFeed;
 
 
+    //lenders and borrowers in the platform
+    address[] public lenders;
+    address[] public borrowers;
+
+
+
     //I will implement stable rate for calculation of interest for this project
 
 
+    struct Token{
+        address tokenAddress;
+        string name;
+        uint256 stableRate;
+        address LTV;
+    }
+
+    //now i need a way in which the contract deployer can set the tokens for lending and borrowing.abi
+    
 
 }
