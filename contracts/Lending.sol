@@ -32,7 +32,14 @@ contract Lending is Ownable, ReentrancyGuard {
     uint256 public noOfTokensLent = 0;
     uint256 public noOfTokensBorrowed = 0;
 
+
+    IERC20 public LendCoin;
     //I will implement stable rate for calculation of interest for this project
+
+    constructor(address _tokenAddress){
+        LendCoin = IERC20(_tokenAddress);
+
+    }
 
     struct Token {
         address tokenAddress;
@@ -44,6 +51,8 @@ contract Lending is Ownable, ReentrancyGuard {
     //now i need a way in which the contract deployer can set the tokens for lending and borrowing
     Token[] public tokensForLending;
     Token[] public tokensForBorrowing;
+
+
 
     function addTokensForLending(
         address _tokenAddress,
@@ -125,13 +134,18 @@ contract Lending is Ownable, ReentrancyGuard {
         }
 
         //after user lends some token to the contract we send equivalent LendCoin token
-        // LendCoin.transfer(msg.sender,)   //the problem is how much to send
+        LendCoin.transfer(msg.sender,getDollarEquivalentOfThisToken(tokenAddress,amount));
+           //the problem is how much to send
 
         //here is what we need to do
         /**
         1. get the current price of one token in USD
         2. calculate the total amount in dollars for the amount of tokens.
          */ 
+
+        //after lending we need to emit a supply event
+
+
 
     }
       function updateUserTokensBorrowedOrLent(
@@ -200,6 +214,29 @@ contract Lending is Ownable, ReentrancyGuard {
     }
 
     //ORACLE STUFF
-    
+    function oneTokenToDollars(address tokenAddress) public view returns(uint256){
+        address thisToken = tokenToPriceFeed[tokenAddress];
+
+        //declared as a new instance of the AggregatorV3Interface interface, which represents a specific price oracle contract. 
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(thisToken);
+
+        (, int256 price , , ,) = priceFeed.latestRoundData();
+
+        return(uint256(price));
+
+    }
+
+    function getDollarEquivalentOfThisToken(address tokenAddress,uint256 amount) public view returns(uint256){
+        uint256 dollarsPerToken = oneTokenToDollars(tokenAddress);
+
+        uint256 totalAmountInDollars = (amount * dollarsPerToken);
+
+        return totalAmountInDollars;
+    }
+
+
+
+    //EVENTS
+    event Supply(address sender,address tokenAddress,uint256 amount);
 
 }
