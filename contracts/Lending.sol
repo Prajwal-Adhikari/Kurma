@@ -11,11 +11,16 @@ import "./UserLookUp.sol";
 contract Lending is Ownable, ReentrancyGuard {
     //mappings
     //tokenaddress => user => amount
-    mapping(address => mapping(address => uint256)) public tokensLent;
-    mapping(address => mapping(address => uint256)) public tokensBorrowed;
+    mapping(address => mapping(address => uint256)) public tokensLentAmount;
+    mapping(address => mapping(address => uint256)) public tokensBorrowedAmount;
 
+  
     //for pricefeed
     mapping(address => address) public tokenToPriceFeed;
+
+
+    mapping(uint256 => mapping(address => address)) public tokensLent;
+    mapping(uint256 => mapping(address => address)) public tokensBorrowed;
 
     //lenders and borrowers in the platform
     address[] public lenders;
@@ -24,6 +29,8 @@ contract Lending is Ownable, ReentrancyGuard {
     //UserLookUp for address
     using UserLookUp for address;
 
+    uint256 public noOfTokensLent = 0;
+    uint256 public noOfTokensBorrowed = 0;
 
     //I will implement stable rate for calculation of interest for this project
 
@@ -109,11 +116,77 @@ contract Lending is Ownable, ReentrancyGuard {
 
         (bool userIsAlreadyALender, int256 userIndex) = msg.sender.isUserPresentIn(lenders);
 
-        if(userIsAlreadyALender){
-            
+        if (userIsAlreadyALender) {
+            updateUserTokensBorrowedOrLent(tokenAddress,amount,userIndex,"lenders");
+        } else {
+            lenders.push(msg.sender);
+            tokensLentAmount[tokenAddress][msg.sender] = amount;
+            tokensLent[noOfTokensLent++][msg.sender] = tokenAddress;
         }
 
+        //after user lends some token to the contract we send equivalent LendCoin token
+        // LendCoin.transfer(msg.sender,)   //the problem is how much to send
+
+        //here is what we need to do
+        /**
+        1. get the current price of one token in USD
+        2. calculate the total amount in dollars for the amount of tokens.
+         */ 
+
     }
+      function updateUserTokensBorrowedOrLent(
+         address tokenAddress,
+         uint256 amount,
+         int256 userIndex,
+         string memory lendersOrBorrowers)
+         private {
+           if ( keccak256(abi.encodePacked(lendersOrBorrowers)) == keccak256(abi.encodePacked("lenders"))) {
+               address currentUser = lenders[uint256(userIndex)];
+
+               if (hasLentOrBorrowedToken(currentUser, tokenAddress, noOfTokensLent,"tokensLent")) {
+                   tokensLentAmount[tokenAddress][currentUser] += amount;
+               } else {
+                   tokensLent[noOfTokensLent++][currentUser] = tokenAddress;
+                   tokensLentAmount[tokenAddress][currentUser] = amount;
+               }
+           } else if (keccak256(abi.encodePacked(lendersOrBorrowers)) == keccak256(abi.encodePacked("borrowers"))) {
+               address currentUser = borrowers[uint256(userIndex)];
+
+               if (hasLentOrBorrowedToken(currentUser,tokenAddress,noOfTokensBorrowed,"tokensBorrowed")) {
+                   tokensBorrowedAmount[tokenAddress][currentUser] += amount;
+               } else {
+                   tokensBorrowed[noOfTokensBorrowed++][currentUser] = tokenAddress;
+                   tokensBorrowedAmount[tokenAddress][currentUser] = amount;
+               }
+           }
+       }
+
+       function hasLentOrBorrowedToken(
+           address currentUser,
+           address tokenAddress,
+           uint256 noOfTokenslentOrBorrowed,
+           string memory _tokensLentOrBorrowed
+       ) public view returns (bool) {
+           if (noOfTokenslentOrBorrowed > 0) {
+               if (keccak256(abi.encodePacked(_tokensLentOrBorrowed)) == keccak256(abi.encodePacked("tokensLent"))) {
+                   for (uint256 i = 0; i < noOfTokensLent; i++) {
+                       address tokenAddressFound = tokensLent[i][currentUser];
+                       if (tokenAddressFound == tokenAddress) {
+                           return true;
+                       }
+                   }
+               } else if (keccak256(abi.encodePacked(_tokensLentOrBorrowed)) == keccak256(abi.encodePacked("tokensBorrowed"))) {
+                   for (uint256 i = 0; i < noOfTokensBorrowed; i++) {
+                       address tokenAddressFound = tokensBorrowed[i][currentUser];
+                       if (tokenAddressFound == tokenAddress) {
+                           return true;
+                       }
+                   }
+               }
+           }
+           return false;
+       }
+
 
     function isTokenAllowed(address tokenAddress, Token[] memory tokenArray) private pure returns(bool){
         if(tokenArray.length > 0){
@@ -125,5 +198,8 @@ contract Lending is Ownable, ReentrancyGuard {
         }
         return false;
     }
+
+    //ORACLE STUFF
+    
 
 }
