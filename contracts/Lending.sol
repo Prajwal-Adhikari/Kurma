@@ -14,10 +14,8 @@ contract Lending is Ownable, ReentrancyGuard {
     mapping(address => mapping(address => uint256)) public tokensLentAmount;
     mapping(address => mapping(address => uint256)) public tokensBorrowedAmount;
 
-  
     //for pricefeed
     mapping(address => address) public tokenToPriceFeed;
-
 
     mapping(uint256 => mapping(address => address)) public tokensLent;
     mapping(uint256 => mapping(address => address)) public tokensBorrowed;
@@ -32,13 +30,12 @@ contract Lending is Ownable, ReentrancyGuard {
     uint256 public noOfTokensLent = 0;
     uint256 public noOfTokensBorrowed = 0;
 
-
     IERC20 public LendCoin;
+
     //I will implement stable rate for calculation of interest for this project
 
-    constructor(address _tokenAddress){
+    constructor(address _tokenAddress) {
         LendCoin = IERC20(_tokenAddress);
-
     }
 
     struct Token {
@@ -51,8 +48,6 @@ contract Lending is Ownable, ReentrancyGuard {
     //now i need a way in which the contract deployer can set the tokens for lending and borrowing
     Token[] public tokensForLending;
     Token[] public tokensForBorrowing;
-
-
 
     function addTokensForLending(
         address _tokenAddress,
@@ -98,7 +93,6 @@ contract Lending is Ownable, ReentrancyGuard {
         return false;
     }
 
-
     /*
     lend
     borrow
@@ -108,25 +102,34 @@ contract Lending is Ownable, ReentrancyGuard {
      */
 
     //lend
-    function supply(address tokenAddress,uint256 amount) external payable{
+    function supply(address tokenAddress, uint256 amount) external payable {
         //check if the token is allowed for lending in the platform -> we need a private function for this
 
-        require(isTokenAllowed(tokenAddress,tokensForLending),"LEND: Asset not supported");
-        require(amount > 0,"LEND: Cannot lend 0 amount");
-
+        require(
+            isTokenAllowed(tokenAddress, tokensForLending),
+            "LEND: Asset not supported"
+        );
+        require(amount > 0, "LEND: Cannot lend 0 amount");
 
         IERC20 token = IERC20(tokenAddress);
 
-        //check balance of user 
-        require(token.balanceOf(msg.sender) >= amount,"Insufficient Funds");
+        //check balance of user
+        require(token.balanceOf(msg.sender) >= amount, "Insufficient Funds");
 
         //transfer token amount from msg.sender(user here) to this smart contract;
-        token.transferFrom(msg.sender,address(this),amount);
+        token.transferFrom(msg.sender, address(this), amount);
 
-        (bool userIsAlreadyALender, int256 userIndex) = msg.sender.isUserPresentIn(lenders);
+        (bool userIsAlreadyALender, int256 userIndex) = msg
+            .sender
+            .isUserPresentIn(lenders);
 
         if (userIsAlreadyALender) {
-            updateUserTokensBorrowedOrLent(tokenAddress,amount,userIndex,"lenders");
+            updateUserTokensBorrowedOrLent(
+                tokenAddress,
+                amount,
+                userIndex,
+                "lenders"
+            );
         } else {
             lenders.push(msg.sender);
             tokensLentAmount[tokenAddress][msg.sender] = amount;
@@ -134,78 +137,129 @@ contract Lending is Ownable, ReentrancyGuard {
         }
 
         //after user lends some token to the contract we send equivalent LendCoin token
-        LendCoin.transfer(msg.sender,getDollarEquivalentOfThisToken(tokenAddress,amount));
-           //the problem is how much to send
+        LendCoin.transfer(
+            msg.sender,
+            getDollarEquivalentOfThisToken(tokenAddress, amount)
+        );
+        //the problem is how much to send
 
         //here is what we need to do
         /**
         1. get the current price of one token in USD
         2. calculate the total amount in dollars for the amount of tokens.
-         */ 
+         */
 
         //after lending we need to emit a supply event
+        emit Supply(msg.sender, tokenAddress, amount);
+    }
 
 
+    // //withdraw
+    // function withdraw(address tokenAddress, uint256 amount) external{
+    //     require(amount > 0,"Cannot withdraw zero amount");
+    //     require(msg.sender.indexOf(lenders) >= 0);
+
+    //     IERC20 token = IERC20(tokenAddress);
+
+    //     uint256 tokenWithdrawlAmount = getDollarEquivalentOfThisToken(tokenAddress,amount);
+
+    //     //we need to deduct borrowedAmount from the collateralAmount
+    //     uint256 availableTokenWithdrawlAmount = getAvailableTokenToWithdraw(msg.sender);
+
+    // }
+
+    function getAvailableTokenToWithdraw(address _user) public view returns(uint256){
 
     }
-      function updateUserTokensBorrowedOrLent(
-         address tokenAddress,
-         uint256 amount,
-         int256 userIndex,
-         string memory lendersOrBorrowers)
-         private {
-           if ( keccak256(abi.encodePacked(lendersOrBorrowers)) == keccak256(abi.encodePacked("lenders"))) {
-               address currentUser = lenders[uint256(userIndex)];
 
-               if (hasLentOrBorrowedToken(currentUser, tokenAddress, noOfTokensLent,"tokensLent")) {
-                   tokensLentAmount[tokenAddress][currentUser] += amount;
-               } else {
-                   tokensLent[noOfTokensLent++][currentUser] = tokenAddress;
-                   tokensLentAmount[tokenAddress][currentUser] = amount;
-               }
-           } else if (keccak256(abi.encodePacked(lendersOrBorrowers)) == keccak256(abi.encodePacked("borrowers"))) {
-               address currentUser = borrowers[uint256(userIndex)];
+    function updateUserTokensBorrowedOrLent(
+        address tokenAddress,
+        uint256 amount,
+        int256 userIndex,
+        string memory lendersOrBorrowers
+    ) private {
+        if (
+            keccak256(abi.encodePacked(lendersOrBorrowers)) ==
+            keccak256(abi.encodePacked("lenders"))
+        ) {
+            address currentUser = lenders[uint256(userIndex)];
 
-               if (hasLentOrBorrowedToken(currentUser,tokenAddress,noOfTokensBorrowed,"tokensBorrowed")) {
-                   tokensBorrowedAmount[tokenAddress][currentUser] += amount;
-               } else {
-                   tokensBorrowed[noOfTokensBorrowed++][currentUser] = tokenAddress;
-                   tokensBorrowedAmount[tokenAddress][currentUser] = amount;
-               }
-           }
-       }
+            if (
+                hasLentOrBorrowedToken(
+                    currentUser,
+                    tokenAddress,
+                    noOfTokensLent,
+                    "tokensLent"
+                )
+            ) {
+                tokensLentAmount[tokenAddress][currentUser] += amount;
+            } else {
+                tokensLent[noOfTokensLent++][currentUser] = tokenAddress;
+                tokensLentAmount[tokenAddress][currentUser] = amount;
+            }
+        } else if (
+            keccak256(abi.encodePacked(lendersOrBorrowers)) ==
+            keccak256(abi.encodePacked("borrowers"))
+        ) {
+            address currentUser = borrowers[uint256(userIndex)];
 
-       function hasLentOrBorrowedToken(
-           address currentUser,
-           address tokenAddress,
-           uint256 noOfTokenslentOrBorrowed,
-           string memory _tokensLentOrBorrowed
-       ) public view returns (bool) {
-           if (noOfTokenslentOrBorrowed > 0) {
-               if (keccak256(abi.encodePacked(_tokensLentOrBorrowed)) == keccak256(abi.encodePacked("tokensLent"))) {
-                   for (uint256 i = 0; i < noOfTokensLent; i++) {
-                       address tokenAddressFound = tokensLent[i][currentUser];
-                       if (tokenAddressFound == tokenAddress) {
-                           return true;
-                       }
-                   }
-               } else if (keccak256(abi.encodePacked(_tokensLentOrBorrowed)) == keccak256(abi.encodePacked("tokensBorrowed"))) {
-                   for (uint256 i = 0; i < noOfTokensBorrowed; i++) {
-                       address tokenAddressFound = tokensBorrowed[i][currentUser];
-                       if (tokenAddressFound == tokenAddress) {
-                           return true;
-                       }
-                   }
-               }
-           }
-           return false;
-       }
+            if (
+                hasLentOrBorrowedToken(
+                    currentUser,
+                    tokenAddress,
+                    noOfTokensBorrowed,
+                    "tokensBorrowed"
+                )
+            ) {
+                tokensBorrowedAmount[tokenAddress][currentUser] += amount;
+            } else {
+                tokensBorrowed[noOfTokensBorrowed++][
+                    currentUser
+                ] = tokenAddress;
+                tokensBorrowedAmount[tokenAddress][currentUser] = amount;
+            }
+        }
+    }
 
+    function hasLentOrBorrowedToken(
+        address currentUser,
+        address tokenAddress,
+        uint256 noOfTokenslentOrBorrowed,
+        string memory _tokensLentOrBorrowed
+    ) public view returns (bool) {
+        if (noOfTokenslentOrBorrowed > 0) {
+            if (
+                keccak256(abi.encodePacked(_tokensLentOrBorrowed)) ==
+                keccak256(abi.encodePacked("tokensLent"))
+            ) {
+                for (uint256 i = 0; i < noOfTokensLent; i++) {
+                    address tokenAddressFound = tokensLent[i][currentUser];
+                    if (tokenAddressFound == tokenAddress) {
+                        return true;
+                    }
+                }
+            } else if (
+                keccak256(abi.encodePacked(_tokensLentOrBorrowed)) ==
+                keccak256(abi.encodePacked("tokensBorrowed"))
+            ) {
+                for (uint256 i = 0; i < noOfTokensBorrowed; i++) {
+                    address tokenAddressFound = tokensBorrowed[i][currentUser];
+                    if (tokenAddressFound == tokenAddress) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
 
-    function isTokenAllowed(address tokenAddress, Token[] memory tokenArray) private pure returns(bool){
-        if(tokenArray.length > 0){
-            for(uint256 i = 0; i < tokenArray.length; i++){
-                if(tokenArray[i].tokenAddress == tokenAddress){
+    function isTokenAllowed(
+        address tokenAddress,
+        Token[] memory tokenArray
+    ) private pure returns (bool) {
+        if (tokenArray.length > 0) {
+            for (uint256 i = 0; i < tokenArray.length; i++) {
+                if (tokenArray[i].tokenAddress == tokenAddress) {
                     return true;
                 }
             }
@@ -214,19 +268,23 @@ contract Lending is Ownable, ReentrancyGuard {
     }
 
     //ORACLE STUFF
-    function oneTokenToDollars(address tokenAddress) public view returns(uint256){
+    function oneTokenToDollars(
+        address tokenAddress
+    ) public view returns (uint256) {
         address thisToken = tokenToPriceFeed[tokenAddress];
 
-        //declared as a new instance of the AggregatorV3Interface interface, which represents a specific price oracle contract. 
+        //declared as a new instance of the AggregatorV3Interface interface, which represents a specific price oracle contract.
         AggregatorV3Interface priceFeed = AggregatorV3Interface(thisToken);
 
-        (, int256 price , , ,) = priceFeed.latestRoundData();
+        (, int256 price, , , ) = priceFeed.latestRoundData();
 
-        return(uint256(price));
-
+        return (uint256(price));
     }
 
-    function getDollarEquivalentOfThisToken(address tokenAddress,uint256 amount) public view returns(uint256){
+    function getDollarEquivalentOfThisToken(
+        address tokenAddress,
+        uint256 amount
+    ) public view returns (uint256) {
         uint256 dollarsPerToken = oneTokenToDollars(tokenAddress);
 
         uint256 totalAmountInDollars = (amount * dollarsPerToken);
@@ -234,9 +292,6 @@ contract Lending is Ownable, ReentrancyGuard {
         return totalAmountInDollars;
     }
 
-
-
     //EVENTS
-    event Supply(address sender,address tokenAddress,uint256 amount);
-
+    event Supply(address sender, address tokenAddress, uint256 amount);
 }
