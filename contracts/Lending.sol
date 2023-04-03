@@ -153,6 +153,50 @@ contract Lending is Ownable, ReentrancyGuard {
         emit Supply(msg.sender, tokenAddress, amount);
     }
 
+    function borrow(address tokenAddress, uint256 amount) external {
+        //check for allowed token and amount not equal to zero
+        require(
+            isTokenAllowed(tokenAddress, tokensForBorrowing),
+            "BORROW: Assest not supported"
+        );
+        require(amount > 0, "Cannot borrow zero amount");
+
+        // uint256 totalBorrowableAmount = getTotalAmountForBorrowingForThisUser(msg.sender);
+        // uint256 amountRequestedToBorrowInDollars = getDollarEquivalentOfThisToken(tokenAddress,amount);
+
+        // require(amountRequestedToBorrowInDollars <= totalBorrowableAmount,"BORROW: Requested Amount is more than borrowable amount");
+
+        IERC20 token = IERC20(tokenAddress);
+
+        require(
+            token.balanceOf(address(this)) >= amount,
+            "BORROW: Insufficient Token Funds"
+        );
+
+        //if all good
+        token.transfer(msg.sender, amount);
+
+        //update user status in the platform
+        (bool userPresent, int256 userIndex) = msg.sender.isUserPresentIn(
+            borrowers
+        );
+
+        if (userPresent) {
+            updateUserTokensBorrowedOrLent(
+                tokenAddress,
+                amount,
+                userIndex,
+                "borrowers"
+            );
+        } else {
+            borrowers.push(msg.sender);
+            tokensBorrowedAmount[tokenAddress][msg.sender] = amount;
+            tokensBorrowed[noOfTokensBorrowed++][msg.sender] = tokenAddress;
+        }
+
+        //emit a borrow event
+        emit Borrow(msg.sender, tokenAddress, amount);
+    }
 
     // //withdraw
     // function withdraw(address tokenAddress, uint256 amount) external{
@@ -168,9 +212,9 @@ contract Lending is Ownable, ReentrancyGuard {
 
     // }
 
-    function getAvailableTokenToWithdraw(address _user) public view returns(uint256){
-
-    }
+    function getAvailableTokenToWithdraw(
+        address _user
+    ) public view returns (uint256) {}
 
     function updateUserTokensBorrowedOrLent(
         address tokenAddress,
@@ -267,6 +311,56 @@ contract Lending is Ownable, ReentrancyGuard {
         return false;
     }
 
+    function getUserTotalAmountAvailableForBorrowInDollars(
+        address user
+    ) public view returns (uint256) {
+        // uint256 totalAvailableToBorrow = 0;
+
+        uint256 userTotalCollateralToBorrow = 0;
+        uint256 userTotalCollateralAlreadyBorrowed = 0;
+
+        for (uint256 i = 0; i < lenders.length; i++) {
+            address currentLender = lenders[i];
+            if (currentLender == user) {
+                for (uint256 j = 0; j < tokensForLending.length; j++) {
+                    Token memory currentTokenForLending = tokensForLending[j];
+                    uint256 currentTokenLentAmount = tokensLentAmount[
+                        currentTokenForLending.tokenAddress
+                    ][user];
+                    uint256 currentTokenLentAmountInDollar = getDollarEquivalentOfThisToken(
+                            currentTokenForLending.tokenAddress,
+                            currentTokenLentAmount
+                        );
+                    uint256 availableInDollar = (currentTokenLentAmountInDollar *
+                            currentTokenForLending.LTV) / 10 ** 18;
+                    userTotalCollateralToBorrow += availableInDollar;
+                }
+            }
+        }
+
+        for (uint256 i = 0; i < borrowers.length; i++) {
+            address currentBorrower = borrowers[i];
+            if (currentBorrower == user) {
+                for (uint256 j = 0; j < tokensForBorrowing.length; j++) {
+                    Token memory currentTokenForBorrowing = tokensForBorrowing[
+                        j
+                    ];
+                    uint256 currentTokenBorrowedAmount = tokensBorrowedAmount[
+                        currentTokenForBorrowing.tokenAddress
+                    ][user];
+                    uint256 currentTokenBorrowedAmountInDollar = getDollarEquivalentOfThisToken(
+                            currentTokenForBorrowing.tokenAddress,
+                            currentTokenBorrowedAmount
+                        );
+
+                    userTotalCollateralAlreadyBorrowed += currentTokenBorrowedAmountInDollar;
+                }
+            }
+        }
+
+        return userTotalCollateralToBorrow - userTotalCollateralAlreadyBorrowed;
+    }
+
     //ORACLE STUFF
     function oneTokenToDollars(
         address tokenAddress
@@ -294,4 +388,6 @@ contract Lending is Ownable, ReentrancyGuard {
 
     //EVENTS
     event Supply(address sender, address tokenAddress, uint256 amount);
+
+    event Borrow(address sender, address tokenAddress, uint256 amount);
 }
