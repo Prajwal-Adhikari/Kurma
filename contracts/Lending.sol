@@ -1,21 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import "./UserLookUp.sol";
+import "./Oracle.sol";
 
 contract Lending is Ownable, ReentrancyGuard {
     //mappings
     //tokenaddress => user => amount
     mapping(address => mapping(address => uint256)) public tokensLentAmount;
     mapping(address => mapping(address => uint256)) public tokensBorrowedAmount;
-
-    //for pricefeed
-    mapping(address => address) public tokenToPriceFeed;
 
     mapping(uint256 => mapping(address => address)) public tokensLent;
     mapping(uint256 => mapping(address => address)) public tokensBorrowed;
@@ -26,6 +23,7 @@ contract Lending is Ownable, ReentrancyGuard {
 
     //UserLookUp for address
     using UserLookUp for address;
+    Oracle public oracle;
 
     uint256 public noOfTokensLent = 0;
     uint256 public noOfTokensBorrowed = 0;
@@ -139,7 +137,7 @@ contract Lending is Ownable, ReentrancyGuard {
         //after user lends some token to the contract we send equivalent LendCoin token
         LendCoin.transfer(
             msg.sender,
-            getDollarEquivalentOfThisToken(tokenAddress, amount)
+            oracle.getDollarEquivalentOfThisToken(tokenAddress, amount)
         );
         //the problem is how much to send
 
@@ -327,7 +325,7 @@ contract Lending is Ownable, ReentrancyGuard {
                     uint256 currentTokenLentAmount = tokensLentAmount[
                         currentTokenForLending.tokenAddress
                     ][user];
-                    uint256 currentTokenLentAmountInDollar = getDollarEquivalentOfThisToken(
+                    uint256 currentTokenLentAmountInDollar = oracle.getDollarEquivalentOfThisToken(
                             currentTokenForLending.tokenAddress,
                             currentTokenLentAmount
                         );
@@ -348,7 +346,7 @@ contract Lending is Ownable, ReentrancyGuard {
                     uint256 currentTokenBorrowedAmount = tokensBorrowedAmount[
                         currentTokenForBorrowing.tokenAddress
                     ][user];
-                    uint256 currentTokenBorrowedAmountInDollar = getDollarEquivalentOfThisToken(
+                    uint256 currentTokenBorrowedAmountInDollar = oracle.getDollarEquivalentOfThisToken(
                             currentTokenForBorrowing.tokenAddress,
                             currentTokenBorrowedAmount
                         );
@@ -362,30 +360,7 @@ contract Lending is Ownable, ReentrancyGuard {
     }
 
     //ORACLE STUFF
-    function oneTokenToDollars(
-        address tokenAddress
-    ) public view returns (uint256) {
-        address thisToken = tokenToPriceFeed[tokenAddress];
-
-        //declared as a new instance of the AggregatorV3Interface interface, which represents a specific price oracle contract.
-        AggregatorV3Interface priceFeed = AggregatorV3Interface(thisToken);
-
-        (, int256 price, , , ) = priceFeed.latestRoundData();
-
-        return (uint256(price));
-    }
-
-    function getDollarEquivalentOfThisToken(
-        address tokenAddress,
-        uint256 amount
-    ) public view returns (uint256) {
-        uint256 dollarsPerToken = oneTokenToDollars(tokenAddress);
-
-        uint256 totalAmountInDollars = (amount * dollarsPerToken);
-
-        return totalAmountInDollars;
-    }
-
+    
     //EVENTS
     event Supply(address sender, address tokenAddress, uint256 amount);
 
