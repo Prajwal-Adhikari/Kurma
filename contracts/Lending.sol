@@ -233,22 +233,68 @@ contract Lending is Ownable, ReentrancyGuard {
             borrowers.pop();
         }
 
-        emit Repay(msg.sender, index, tokenBorrowed, amount + interest(tokenAddress, tokenBorrowed),borrowers);
+        emit Repay(
+            msg.sender,
+            index,
+            tokenBorrowed,
+            amount + interest(tokenAddress, tokenBorrowed),
+            borrowers
+        );
     }
 
-    // //withdraw
-    // function withdraw(address tokenAddress, uint256 amount) external{
-    //     require(amount > 0,"Cannot withdraw zero amount");
-    //     require(msg.sender.indexOf(lenders) >= 0);
+    //withdraw
+    function withdraw(address tokenAddress, uint256 amount) external {
+        require(amount > 0);
 
-    //     IERC20 token = IERC20(tokenAddress);
+        require(msg.sender.indexOf(lenders) >= 0);
 
-    //     uint256 tokenWithdrawlAmount = getDollarEquivalentOfThisToken(tokenAddress,amount);
+        IERC20 token = IERC20(tokenAddress);
 
-    //     //we need to deduct borrowedAmount from the collateralAmount
-    //     uint256 availableTokenWithdrawlAmount = getAvailableTokenToWithdraw(msg.sender);
+        uint256 tokenToWithdrawInDollars = oracle
+            .getDollarEquivalentOfThisToken(tokenAddress, amount);
+        uint256 availableToWithdraw = getTokenAvailableToWithdraw(msg.sender);
 
-    // }
+        uint totalTokenSuppliedInContract = getTotalTokenSupplied(tokenAddress);
+        uint totalTokenBorrowedInContract = getTotalTokenBorrowed(tokenAddress);
+
+        require(
+            amount <=
+                (totalTokenSuppliedInContract - totalTokenBorrowedInContract)
+        );
+        require(tokenToWithdrawInDollars <= availableToWithdraw);
+
+        uint256 lendCoinToRemove = oracle.getDollarEquivalentOfThisToken(
+            tokenAddress,
+            amount
+        );
+        uint256 lendCoinBalance = LendCoin.balanceOf(msg.sender);
+
+        if (lendCoinToRemove <= lendCoinBalance) {
+            LendCoin.transferFrom(msg.sender, address(this), lendCoinToRemove);
+        } else {
+            LendCoin.transferFrom(msg.sender, address(this), lendCoinBalance);
+        }
+
+        token.transfer(msg.sender, amount);
+
+        tokensLentAmount[tokenAddress][msg.sender] -= amount;
+
+        emit Withdraw(
+            msg.sender,
+            amount,
+            tokenToWithdrawInDollars,
+            availableToWithdraw,
+            getTotalAmountLentInDollars(msg.sender),
+            lendCoinBalance
+        );
+
+        if (getTotalAmountLentInDollars(msg.sender) <= 0) {
+            lenders[uint256(msg.sender.indexOf(lenders))] = lenders[
+                lenders.length - 1
+            ];
+            lenders.pop();
+        }
+    }
 
     //calculate interest
     function interest(
@@ -447,6 +493,106 @@ contract Lending is Ownable, ReentrancyGuard {
         return totalAmountBorrowed;
     }
 
+    function getTokenAvailableToWithdraw(
+        address user
+    ) public view returns (uint256) {
+        uint256 totalAmountBorrowedInDollars = getTotalAmountBorrowedInDollars(
+            user
+        );
+
+        uint remainingCollateral = 0;
+
+        if (totalAmountBorrowedInDollars > 0) {
+            remainingCollateral = getRemainingCollateral(user);
+        } else {
+            remainingCollateral = getTotalAmountLentInDollars(user);
+        }
+
+        if (remainingCollateral < totalAmountBorrowedInDollars) {
+            return 0;
+        }
+
+        return remainingCollateral - totalAmountBorrowedInDollars;
+    }
+
+    function getRemainingCollateral(
+        address user
+    ) public view returns (uint256) {
+        uint256 remainingCollateral = 0;
+        for (uint256 i = 0; i < noOfTokensLent; i++) {
+            address userLentTokenAddressFound = tokensLent[i][user];
+
+            if (
+                userLentTokenAddressFound !=
+                0x0000000000000000000000000000000000000000
+            ) {
+                uint256 tokenAmountLentInDollars = oracle
+                    .getDollarEquivalentOfThisToken(
+                        userLentTokenAddressFound,
+                        tokensLentAmount[userLentTokenAddressFound][user]
+                    );
+
+                remainingCollateral +=
+                    (tokenAmountLentInDollars *
+                        getTokenFrom(userLentTokenAddressFound).LTV) /
+                    10 ** 18;
+            }
+        }
+        return remainingCollateral;
+    }
+
+    function getTotalAmountLentInDollars(
+        address user
+    ) public view returns (uint256) {
+        uint256 totalAmountLent = 0;
+        for (uint256 i = 0; i < noOfTokensLent; i++) {
+            if (
+                tokensLent[i][user] !=
+                0x0000000000000000000000000000000000000000
+            ) {
+                uint256 tokenAmountLent = tokensLentAmount[tokensLent[i][user]][
+                    user
+                ];
+
+                uint256 tokenAmountLentInDollars = oracle
+                    .getDollarEquivalentOfThisToken(
+                        tokensLent[i][user],
+                        tokenAmountLent
+                    );
+
+                totalAmountLent += tokenAmountLentInDollars;
+            }
+        }
+        return totalAmountLent;
+    }
+
+    function getTotalTokenSupplied(
+        address tokenAddres
+    ) public view returns (uint256) {
+        uint256 totalTokenSupplied = 0;
+        if (lenders.length > 0) {
+            for (uint256 i = 0; i < lenders.length; i++) {
+                totalTokenSupplied += tokensLentAmount[tokenAddres][lenders[i]];
+            }
+        }
+
+        return totalTokenSupplied;
+    }
+
+    function getTotalTokenBorrowed(
+        address tokenAddress
+    ) public view returns (uint256) {
+        uint256 totalTokenBorrowed = 0;
+        if (borrowers.length > 0) {
+            for (uint256 i = 0; i < borrowers.length; i++) {
+                totalTokenBorrowed += tokensBorrowedAmount[tokenAddress][
+                    borrowers[i]
+                ];
+            }
+        }
+        return totalTokenBorrowed;
+    }
+
     //ORACLE STUFF
 
     //EVENTS
@@ -460,5 +606,14 @@ contract Lending is Ownable, ReentrancyGuard {
         uint256 tokenAmountBorrowed,
         uint256 totalTokenAmountToCollectFromUser,
         address[] borrowers
+    );
+
+    event Withdraw(
+        address sender,
+        uint256 amount,
+        uint256 tokenToWithdrawInDollars,
+        uint256 availableToWithdraw,
+        uint256 totalAmountLentInDollars,
+        uint256 lendCoinToRemove
     );
 }
